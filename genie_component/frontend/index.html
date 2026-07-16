@@ -160,6 +160,67 @@
     let speaking = false, mouthPhase = 0, idleT = 0;
     let animationStarted = false;
 
+    /* Lip sync settings & state */
+    let targetMouthScaleY = 0.15;
+    let targetMouthScaleX = 1.0;
+    let currentMouthScaleY = 0.15;
+    let currentMouthScaleX = 1.0;
+    let lipSyncTimeoutIds = [];
+
+    const mouthShapes = {
+      'a': { y: 1.5, x: 1.2 },
+      'e': { y: 1.2, x: 1.3 },
+      'i': { y: 1.0, x: 1.3 },
+      'o': { y: 1.6, x: 0.7 },
+      'u': { y: 1.4, x: 0.6 },
+      'p': { y: 0.15, x: 1.0 },
+      'b': { y: 0.15, x: 1.0 },
+      'm': { y: 0.15, x: 1.0 },
+      'f': { y: 0.3, x: 1.1 },
+      'v': { y: 0.3, x: 1.1 },
+      't': { y: 0.6, x: 1.0 },
+      'd': { y: 0.6, x: 1.0 },
+      's': { y: 0.4, x: 1.1 },
+      'sh': { y: 0.6, x: 0.8 },
+      'default': { y: 0.8, x: 1.0 }
+    };
+
+    function clearLipSyncTimeouts() {
+      lipSyncTimeoutIds.forEach(id => clearTimeout(id));
+      lipSyncTimeoutIds = [];
+    }
+
+    function animateWord(word) {
+      clearLipSyncTimeouts();
+      let delay = 0;
+      const charTime = 75; // average duration of phonetic segment in ms
+      
+      for (let i = 0; i < word.length; i++) {
+        const char = word[i];
+        const nextChar = word[i+1] || '';
+        let shape = mouthShapes[char] || mouthShapes['default'];
+        
+        if ((char === 's' && nextChar === 'h') || (char === 'c' && nextChar === 'h')) {
+          shape = mouthShapes['sh'];
+          i++; // skip next character
+        }
+
+        const timeoutId = setTimeout(() => {
+          targetMouthScaleY = shape.y;
+          targetMouthScaleX = shape.x;
+        }, delay);
+        lipSyncTimeoutIds.push(timeoutId);
+        delay += charTime;
+      }
+
+      // Transition to resting state at the end of the word
+      const endTimeoutId = setTimeout(() => {
+        targetMouthScaleY = 0.15;
+        targetMouthScaleX = 1.0;
+      }, delay);
+      lipSyncTimeoutIds.push(endTimeoutId);
+    }
+
     function initThree() {
       const wrap = document.getElementById("wrap");
       const canvas = document.getElementById("threeCanvas");
@@ -168,7 +229,7 @@
 
       scene = new THREE.Scene();
       camera = new THREE.PerspectiveCamera(35, W / H, 0.1, 100);
-      camera.position.set(0, 0, 6.5);
+      camera.position.set(0, 0.2, 8.5);
 
       renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
       renderer.setSize(W, H);
@@ -187,11 +248,35 @@
       avatar = new THREE.Group();
       scene.add(avatar);
 
-      /* Head */
-      const skin = new THREE.MeshStandardMaterial({ color: 0xe8b48c, roughness: 0.55, metalness: 0.05 });
+      /* Head - magical blue skin */
+      const skin = new THREE.MeshStandardMaterial({ color: 0x4ba3e3, roughness: 0.55, metalness: 0.05 });
       const head = new THREE.Mesh(new THREE.SphereGeometry(1.5, 64, 64), skin);
       head.scale.set(1, 1.08, 0.92);
       avatar.add(head);
+
+      /* Pointy ears */
+      const earGeo = new THREE.ConeGeometry(0.22, 0.8, 32);
+      earGeo.translate(0, 0.4, 0);
+      const earL = new THREE.Mesh(earGeo, skin);
+      earL.position.set(-1.42, 0.1, -0.2);
+      earL.rotation.set(0.2, 0.3, -Math.PI / 4);
+      avatar.add(earL);
+
+      const earR = new THREE.Mesh(earGeo, skin);
+      earR.position.set(1.42, 0.1, -0.2);
+      earR.rotation.set(0.2, -0.3, Math.PI / 4);
+      avatar.add(earR);
+
+      /* Gold hoop earrings */
+      const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.9, roughness: 0.1 });
+      const ringGeo = new THREE.TorusGeometry(0.2, 0.04, 8, 24);
+      const ringL = new THREE.Mesh(ringGeo, goldMat);
+      ringL.position.set(-1.58, -0.3, -0.1);
+      avatar.add(ringL);
+
+      const ringR = new THREE.Mesh(ringGeo, goldMat);
+      ringR.position.set(1.58, -0.3, -0.1);
+      avatar.add(ringR);
 
       /* Eyes */
       const eyeGeo = new THREE.SphereGeometry(0.18, 16, 16);
@@ -213,8 +298,8 @@
       shineR.position.x = 0.62;
       avatar.add(shineR);
 
-      /* Eyebrows */
-      const browMat = new THREE.MeshStandardMaterial({ color: 0x5c3a1e });
+      /* Eyebrows (charcoal/dark) */
+      const browMat = new THREE.MeshStandardMaterial({ color: 0x111625 });
       const browGeo = new THREE.BoxGeometry(0.45, 0.07, 0.1);
       [-0.52, 0.52].forEach(x => {
         const brow = new THREE.Mesh(browGeo, browMat);
@@ -222,8 +307,8 @@
         avatar.add(brow);
       });
 
-      /* Nose */
-      const noseMat = new THREE.MeshStandardMaterial({ color: 0xd4956f, roughness: 0.7 });
+      /* Nose (slightly darker blue) */
+      const noseMat = new THREE.MeshStandardMaterial({ color: 0x2d8fd8, roughness: 0.7 });
       const nose = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 12), noseMat);
       nose.position.set(0, -0.1, 1.42);
       avatar.add(nose);
@@ -235,6 +320,25 @@
       const mouthMat = new THREE.MeshStandardMaterial({ color: 0x7a2e2e, roughness: 0.5 });
       mouth = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.13, 0.2), mouthMat);
       mouthGroup.add(mouth);
+
+      /* Curled mustache */
+      const hairMat = new THREE.MeshStandardMaterial({ color: 0x111625, roughness: 0.8 });
+      const stacheGeo = new THREE.TorusGeometry(0.24, 0.06, 8, 16, Math.PI);
+      const stacheL = new THREE.Mesh(stacheGeo, hairMat);
+      stacheL.position.set(-0.2, -0.48, 1.28);
+      stacheL.rotation.set(0.1, 0, Math.PI / 6);
+      avatar.add(stacheL);
+
+      const stacheR = new THREE.Mesh(stacheGeo, hairMat);
+      stacheR.position.set(0.2, -0.48, 1.28);
+      stacheR.rotation.set(0.1, 0, -Math.PI / 6 - Math.PI);
+      avatar.add(stacheR);
+
+      /* Goatee */
+      const goatee = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.7, 16), hairMat);
+      goatee.rotation.x = Math.PI;
+      goatee.position.set(0, -1.05, 1.15);
+      avatar.add(goatee);
 
       /* Genie turban */
       const turbanMat = new THREE.MeshStandardMaterial({ color: 0x4a3fa0, roughness: 0.4, metalness: 0.3 });
@@ -248,6 +352,27 @@
       const jewel = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 12), jewelMat);
       jewel.position.set(0, 1.78, 1.1);
       avatar.add(jewel);
+
+      /* Turban feather */
+      const featherGeo = new THREE.ConeGeometry(0.12, 1.0, 4);
+      featherGeo.scale(1, 1, 0.1);
+      const featherMat = new THREE.MeshStandardMaterial({ color: 0xe05da9, roughness: 0.6 });
+      const feather = new THREE.Mesh(featherGeo, featherMat);
+      feather.position.set(0, 2.3, 0.9);
+      feather.rotation.set(-0.2, 0, 0.1);
+      avatar.add(feather);
+
+      /* Neck */
+      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 0.6, 16), skin);
+      neck.position.set(0, -1.2, 0);
+      avatar.add(neck);
+
+      /* Torso / Shoulders */
+      const vestMat = new THREE.MeshStandardMaterial({ color: 0x4a3fa0, roughness: 0.4, metalness: 0.3 });
+      const torso = new THREE.Mesh(new THREE.SphereGeometry(1.4, 32, 16), vestMat);
+      torso.scale.set(1.6, 0.8, 0.9);
+      torso.position.set(0, -2.1, -0.2);
+      avatar.add(torso);
 
       /* Start animation loop */
       if (!animationStarted) {
@@ -264,13 +389,17 @@
       avatar.position.y = Math.sin(idleT * 1.2) * 0.04;
 
       if (speaking) {
-        mouthPhase += 0.35;
-        const open = 0.13 + Math.abs(Math.sin(mouthPhase)) * 0.4 + Math.random() * 0.05;
-        mouth.scale.y = open / 0.13;
-        mouth.position.y = -open * 0.3;
+        currentMouthScaleY += (targetMouthScaleY - currentMouthScaleY) * 0.25;
+        currentMouthScaleX += (targetMouthScaleX - currentMouthScaleX) * 0.25;
+        mouth.scale.y = currentMouthScaleY;
+        mouth.scale.x = currentMouthScaleX;
+        mouth.position.y = -currentMouthScaleY * 0.04;
       } else {
-        mouth.scale.y += (1 - mouth.scale.y) * 0.2;
-        mouth.position.y += (0 - mouth.position.y) * 0.2;
+        currentMouthScaleY += (0.15 - currentMouthScaleY) * 0.2;
+        currentMouthScaleX += (1.0 - currentMouthScaleX) * 0.2;
+        mouth.scale.y = currentMouthScaleY;
+        mouth.scale.x = currentMouthScaleX;
+        mouth.position.y = -currentMouthScaleY * 0.04;
       }
       renderer.render(scene, camera);
     }
@@ -311,10 +440,24 @@
     function speak(text) {
       if (!("speechSynthesis" in window)) return;
       window.speechSynthesis.cancel();
+      clearLipSyncTimeouts();
+      targetMouthScaleY = 0.15;
+      targetMouthScaleX = 1.0;
+      
       const utter = new SpeechSynthesisUtterance(text);
+      window.currentUtterance = utter; // prevent GC bug
+      
       utter.onstart = () => { speaking = true; setStatus("speaking", "Speaking"); };
-      utter.onend = () => { speaking = false; setStatus("", "Idle"); };
-      utter.onerror = () => { speaking = false; setStatus("", "Idle"); };
+      utter.onend = () => { speaking = false; setStatus("", "Idle"); clearLipSyncTimeouts(); targetMouthScaleY = 0.15; targetMouthScaleX = 1.0; };
+      utter.onerror = () => { speaking = false; setStatus("", "Idle"); clearLipSyncTimeouts(); targetMouthScaleY = 0.15; targetMouthScaleX = 1.0; };
+      
+      utter.onboundary = (event) => {
+        if (event.name === 'word') {
+          const word = text.substring(event.charIndex).split(/[\s,.;!?]+/)[0].toLowerCase();
+          animateWord(word);
+        }
+      };
+
       window.speechSynthesis.speak(utter);
     }
 
@@ -341,6 +484,10 @@
       micBtn.addEventListener("click", () => {
         if (listening) { recognition.stop(); return; }
         window.speechSynthesis.cancel();
+        clearLipSyncTimeouts();
+        speaking = false;
+        targetMouthScaleY = 0.15;
+        targetMouthScaleX = 1.0;
         recognition.start();
       });
     } else {
