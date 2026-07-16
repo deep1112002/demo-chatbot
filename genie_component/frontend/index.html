@@ -211,27 +211,78 @@
 
     function animateWord(word) {
       clearLipSyncTimeouts();
-      let delay = 0;
-      const charTime = 75;
-
-      for (let i = 0; i < word.length; i++) {
+      
+      // Extract clean phonemes from the word
+      const phonemes = [];
+      let i = 0;
+      while (i < word.length) {
         const char = word[i];
         const nextChar = word[i + 1] || '';
-        let shape = mouthShapes[char] || mouthShapes['default'];
-
-        if ((char === 's' && nextChar === 'h') || (char === 'c' && nextChar === 'h')) {
-          shape = mouthShapes['sh'];
+        
+        if ((char === 's' && nextChar === 'h') || 
+            (char === 'c' && nextChar === 'h') || 
+            (char === 't' && nextChar === 'h')) {
+          phonemes.push('sh');
+          i += 2;
+        } else if ((char === 'o' && nextChar === 'o') || 
+                   (char === 'o' && nextChar === 'u')) {
+          phonemes.push('u');
+          i += 2;
+        } else if ((char === 'e' && nextChar === 'e') || 
+                   (char === 'e' && nextChar === 'a')) {
+          phonemes.push('i');
+          i += 2;
+        } else if (char === 'a' && nextChar === 'i') {
+          phonemes.push('a');
+          i += 2;
+        } else if ('aeioupmbfvtds'.includes(char)) {
+          // Map standard supported phonemes
+          if ('pbm'.includes(char)) {
+            phonemes.push('m');
+          } else if ('fv'.includes(char)) {
+            phonemes.push('f');
+          } else if ('td'.includes(char)) {
+            phonemes.push('t');
+          } else {
+            phonemes.push(char);
+          }
+          i++;
+        } else {
           i++;
         }
+      }
 
+      // Filter consecutive duplicates (e.g. 'i', 'i' -> 'i')
+      const cleanPhonemes = [];
+      for (let j = 0; j < phonemes.length; j++) {
+        if (phonemes[j] !== phonemes[j - 1]) {
+          cleanPhonemes.push(phonemes[j]);
+        }
+      }
+
+      // Fallback to default if no phonemes extracted
+      if (cleanPhonemes.length === 0) {
+        cleanPhonemes.push('default');
+      }
+
+      // Bounded duration: approx 120ms per step
+      const totalDuration = Math.max(180, Math.min(500, cleanPhonemes.length * 120));
+      const stepTime = totalDuration / cleanPhonemes.length;
+
+      let delay = 0;
+      for (let j = 0; j < cleanPhonemes.length; j++) {
+        const ph = cleanPhonemes[j];
+        const shape = mouthShapes[ph] || mouthShapes['default'];
+        
         const timeoutId = setTimeout(() => {
           targetMouthScaleY = shape.y;
           targetMouthScaleX = shape.x;
         }, delay);
         lipSyncTimeoutIds.push(timeoutId);
-        delay += charTime;
+        delay += stepTime;
       }
 
+      // Return to rest
       const endTimeoutId = setTimeout(() => {
         targetMouthScaleY = 0.15;
         targetMouthScaleX = 1.0;
