@@ -390,38 +390,46 @@
       nose.position.set(0, -0.05, 1.15);
       avatar.add(nose);
 
-      /* Mouth group */
+      /* Mouth group — pushed forward to sit on face surface */
       const mouthGroup = new THREE.Group();
-      mouthGroup.position.set(0, -0.48, 1.05);
+      mouthGroup.position.set(0, -0.48, 1.15);
       avatar.add(mouthGroup);
-      const mouthMat = new THREE.MeshStandardMaterial({ color: 0x7a2e2e, roughness: 0.5 });
-      mouth = new THREE.Mesh(new THREE.SphereGeometry(0.24, 32, 32), mouthMat);
-      mouth.scale.set(1.2, 0.075, 0.1);
+      const mouthMat = new THREE.MeshStandardMaterial({ color: 0x3a0a0a, roughness: 0.5 });
+      mouth = new THREE.Mesh(new THREE.SphereGeometry(0.2, 32, 32), mouthMat);
+      mouth.scale.set(1.0, 0.08, 0.3);
       mouthGroup.add(mouth);
 
       /* ===== FACIAL HAIR ===== */
-      /* Curled mustache */
-      const stacheGeo = new THREE.TorusGeometry(0.2, 0.05, 8, 16, Math.PI);
+      /* Mustache - thin curved bars sitting on the upper lip */
+      const stacheGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.32, 8);
       const stacheL = new THREE.Mesh(stacheGeo, hairMat);
-      stacheL.position.set(-0.16, -0.35, 1.05);
-      stacheL.rotation.set(0.1, 0, Math.PI / 6);
+      stacheL.position.set(-0.18, -0.42, 1.08);
+      stacheL.rotation.set(0, 0, -0.4);
       avatar.add(stacheL);
       const stacheR = new THREE.Mesh(stacheGeo, hairMat);
-      stacheR.position.set(0.16, -0.35, 1.05);
-      stacheR.rotation.set(0.1, 0, -Math.PI / 6 - Math.PI);
+      stacheR.position.set(0.18, -0.42, 1.08);
+      stacheR.rotation.set(0, 0, 0.4);
       avatar.add(stacheR);
+      /* Mustache curl tips */
+      const curlGeo = new THREE.SphereGeometry(0.04, 8, 8);
+      const curlL = new THREE.Mesh(curlGeo, hairMat);
+      curlL.position.set(-0.3, -0.36, 1.08);
+      avatar.add(curlL);
+      const curlR = new THREE.Mesh(curlGeo, hairMat);
+      curlR.position.set(0.3, -0.36, 1.08);
+      avatar.add(curlR);
 
-      /* Full beard */
-      const beardGeo = new THREE.SphereGeometry(0.7, 32, 32);
+      /* Beard - trimmed, hugs the jaw */
+      const beardGeo = new THREE.SphereGeometry(0.5, 32, 32);
       const beard = new THREE.Mesh(beardGeo, hairMat);
-      beard.scale.set(0.9, 1.1, 0.55);
-      beard.position.set(0, -0.9, 0.55);
+      beard.scale.set(0.85, 0.7, 0.45);
+      beard.position.set(0, -0.85, 0.6);
       avatar.add(beard);
 
       /* Goatee point */
-      const goatee = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.5, 16), hairMat);
+      const goatee = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.35, 16), hairMat);
       goatee.rotation.x = Math.PI;
-      goatee.position.set(0, -1.45, 0.55);
+      goatee.position.set(0, -1.25, 0.6);
       avatar.add(goatee);
 
       /* ===== TOPKNOT & STAR ===== */
@@ -726,15 +734,17 @@
       if (speaking) {
         currentMouthScaleY += (targetMouthScaleY - currentMouthScaleY) * 0.25;
         currentMouthScaleX += (targetMouthScaleX - currentMouthScaleX) * 0.25;
-        mouth.scale.y = currentMouthScaleY * 0.5;
-        mouth.scale.x = currentMouthScaleX * 1.2;
-        mouth.position.y = -currentMouthScaleY * 0.03;
+        mouth.scale.y = currentMouthScaleY * 0.4;
+        mouth.scale.x = currentMouthScaleX * 1.0;
+        mouth.scale.z = 0.3 + currentMouthScaleY * 0.15;
+        mouth.position.y = -currentMouthScaleY * 0.025;
       } else {
         currentMouthScaleY += (0.15 - currentMouthScaleY) * 0.2;
         currentMouthScaleX += (1.0 - currentMouthScaleX) * 0.2;
-        mouth.scale.y = currentMouthScaleY * 0.5;
-        mouth.scale.x = currentMouthScaleX * 1.2;
-        mouth.position.y = -currentMouthScaleY * 0.03;
+        mouth.scale.y = currentMouthScaleY * 0.4;
+        mouth.scale.x = currentMouthScaleX * 1.0;
+        mouth.scale.z = 0.3;
+        mouth.position.y = -currentMouthScaleY * 0.025;
       }
       renderer.render(scene, camera);
     }
