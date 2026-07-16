@@ -405,10 +405,10 @@
       cavity.position.set(0, 0, -0.02);
       mouthGroup.add(cavity);
 
-      /* Mouth (lips) */
-      const mouthMat = new THREE.MeshStandardMaterial({ color: 0x8b2020, roughness: 0.45 });
+      /* Mouth (lips) — dark blue-grey matching skin shadows */
+      const mouthMat = new THREE.MeshStandardMaterial({ color: 0x1f344d, roughness: 0.5 });
       mouth = new THREE.Mesh(new THREE.SphereGeometry(0.2, 32, 32), mouthMat);
-      mouth.scale.set(1.0, 0.08, 0.3);
+      mouth.scale.set(1.1, 0.06, 0.3);
       mouthGroup.add(mouth);
 
       /* ===== FACIAL HAIR ===== */
@@ -762,18 +762,18 @@
           currentMouthScaleX += (1.0 - currentMouthScaleX) * 0.2;
         }
         
-        mouth.scale.y = currentMouthScaleY * 0.6;
-        mouth.scale.x = currentMouthScaleX * 1.2;
+        mouth.scale.y = currentMouthScaleY * 0.35;
+        mouth.scale.x = currentMouthScaleX * 1.3;
         mouth.scale.z = 0.3 + currentMouthScaleY * 0.15;
-        mouth.position.y = -currentMouthScaleY * 0.03;
+        mouth.position.y = -currentMouthScaleY * 0.02;
       } else {
         mouthPhase = 0;
         currentMouthScaleY += (0.15 - currentMouthScaleY) * 0.2;
         currentMouthScaleX += (1.0 - currentMouthScaleX) * 0.2;
-        mouth.scale.y = currentMouthScaleY * 0.6;
-        mouth.scale.x = currentMouthScaleX * 1.2;
+        mouth.scale.y = currentMouthScaleY * 0.35;
+        mouth.scale.x = currentMouthScaleX * 1.3;
         mouth.scale.z = 0.3;
-        mouth.position.y = -currentMouthScaleY * 0.03;
+        mouth.position.y = -currentMouthScaleY * 0.02;
       }
       renderer.render(scene, camera);
     }
