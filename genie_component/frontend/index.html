@@ -18,7 +18,7 @@
     #wrap {
       position: relative;
       width: 100%;
-      height: 360px;
+      height: 450px;
       background: radial-gradient(circle at 50% 30%, #1c2029 0%, #0e1015 100%);
       border-radius: 12px;
       overflow: hidden;
@@ -159,6 +159,7 @@
     let renderer, scene, camera, avatar, mouth;
     let speaking = false, mouthPhase = 0, idleT = 0;
     let animationStarted = false;
+    let smokeSpheres = [];
 
     /* Lip sync settings & state */
     let targetMouthScaleY = 0.15;
@@ -193,16 +194,16 @@
     function animateWord(word) {
       clearLipSyncTimeouts();
       let delay = 0;
-      const charTime = 75; // average duration of phonetic segment in ms
-      
+      const charTime = 75;
+
       for (let i = 0; i < word.length; i++) {
         const char = word[i];
-        const nextChar = word[i+1] || '';
+        const nextChar = word[i + 1] || '';
         let shape = mouthShapes[char] || mouthShapes['default'];
-        
+
         if ((char === 's' && nextChar === 'h') || (char === 'c' && nextChar === 'h')) {
           shape = mouthShapes['sh'];
-          i++; // skip next character
+          i++;
         }
 
         const timeoutId = setTimeout(() => {
@@ -213,7 +214,6 @@
         delay += charTime;
       }
 
-      // Transition to resting state at the end of the word
       const endTimeoutId = setTimeout(() => {
         targetMouthScaleY = 0.15;
         targetMouthScaleX = 1.0;
@@ -221,160 +221,396 @@
       lipSyncTimeoutIds.push(endTimeoutId);
     }
 
+    /* ---------- Helper: Create a 5-pointed star shape ---------- */
+    function createStarShape(outerR, innerR, points) {
+      const shape = new THREE.Shape();
+      for (let i = 0; i < points * 2; i++) {
+        const angle = (i * Math.PI) / points - Math.PI / 2;
+        const r = i % 2 === 0 ? outerR : innerR;
+        const x = Math.cos(angle) * r;
+        const y = Math.sin(angle) * r;
+        if (i === 0) shape.moveTo(x, y);
+        else shape.lineTo(x, y);
+      }
+      shape.closePath();
+      return shape;
+    }
+
+    /* ---------- Helper: Create hexagon ring ---------- */
+    function createHexRing(radius, tubeRadius, color, emissiveIntensity) {
+      const points = [];
+      for (let i = 0; i <= 6; i++) {
+        const angle = (i / 6) * Math.PI * 2 - Math.PI / 6;
+        points.push(new THREE.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius, 0));
+      }
+      const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0);
+      const geo = new THREE.TubeGeometry(curve, 64, tubeRadius, 8, false);
+      const mat = new THREE.MeshStandardMaterial({
+        color: color,
+        emissive: color,
+        emissiveIntensity: emissiveIntensity,
+        metalness: 0.3,
+        roughness: 0.4,
+        transparent: true,
+        opacity: 0.7
+      });
+      return new THREE.Mesh(geo, mat);
+    }
+
     function initThree() {
       const wrap = document.getElementById("wrap");
       const canvas = document.getElementById("threeCanvas");
       const W = wrap.clientWidth || window.innerWidth || 400;
-      const H = wrap.clientHeight || 360;
+      const H = wrap.clientHeight || 450;
 
       scene = new THREE.Scene();
       camera = new THREE.PerspectiveCamera(35, W / H, 0.1, 100);
-      camera.position.set(0, 0.2, 8.5);
+      camera.position.set(0, -1.2, 14.5);
+      camera.lookAt(0, -1.2, 0);
 
       renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
       renderer.setSize(W, H);
       renderer.setPixelRatio(window.devicePixelRatio || 1);
 
       /* Lights */
-      scene.add(new THREE.AmbientLight(0x404050, 0.9));
-      const key = new THREE.DirectionalLight(0xffffff, 1.4);
-      key.position.set(3, 4, 5);
+      scene.add(new THREE.AmbientLight(0x606070, 1.0));
+      const key = new THREE.DirectionalLight(0xffffff, 1.6);
+      key.position.set(3, 5, 6);
       scene.add(key);
-      const fill = new THREE.DirectionalLight(0x5da9e0, 0.5);
+      const fill = new THREE.DirectionalLight(0x5da9e0, 0.6);
       fill.position.set(-4, -1, 3);
       scene.add(fill);
+      const rim = new THREE.DirectionalLight(0xffd700, 0.4);
+      rim.position.set(0, 3, -5);
+      scene.add(rim);
+
+      /* ===== Background Hexagons ===== */
+      const hex1 = createHexRing(5.5, 0.06, 0x5da9e0, 1.2);
+      hex1.position.set(0, -1.0, -3);
+      scene.add(hex1);
+
+      const hex2 = createHexRing(5.0, 0.05, 0xffd700, 0.8);
+      hex2.position.set(0, -1.0, -2.8);
+      hex2.rotation.z = Math.PI / 6;
+      scene.add(hex2);
 
       /* Avatar group */
       avatar = new THREE.Group();
       scene.add(avatar);
 
-      /* Head - magical blue skin */
-      const skin = new THREE.MeshStandardMaterial({ color: 0x4ba3e3, roughness: 0.55, metalness: 0.05 });
-      const head = new THREE.Mesh(new THREE.SphereGeometry(1.5, 64, 64), skin);
-      head.scale.set(1, 1.08, 0.92);
+      /* ===== Materials ===== */
+      const skin = new THREE.MeshStandardMaterial({ color: 0x3d8fd4, roughness: 0.45, metalness: 0.05 });
+      const skinDark = new THREE.MeshStandardMaterial({ color: 0x2d7bc0, roughness: 0.5, metalness: 0.05 });
+      const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0xffd700, emissiveIntensity: 0.3, metalness: 0.9, roughness: 0.1 });
+      const hairMat = new THREE.MeshStandardMaterial({ color: 0x0a0e1a, roughness: 0.8 });
+
+      /* ===== HEAD ===== */
+      const head = new THREE.Mesh(new THREE.SphereGeometry(1.2, 64, 64), skin);
+      head.scale.set(1, 1.05, 0.95);
       avatar.add(head);
 
       /* Pointy ears */
-      const earGeo = new THREE.ConeGeometry(0.22, 0.8, 32);
-      earGeo.translate(0, 0.4, 0);
+      const earGeo = new THREE.ConeGeometry(0.18, 0.65, 24);
+      earGeo.translate(0, 0.32, 0);
       const earL = new THREE.Mesh(earGeo, skin);
-      earL.position.set(-1.42, 0.1, -0.2);
-      earL.rotation.set(0.2, 0.3, -Math.PI / 4);
+      earL.position.set(-1.15, 0.0, -0.15);
+      earL.rotation.set(0.15, 0.3, -Math.PI / 4);
       avatar.add(earL);
-
       const earR = new THREE.Mesh(earGeo, skin);
-      earR.position.set(1.42, 0.1, -0.2);
-      earR.rotation.set(0.2, -0.3, Math.PI / 4);
+      earR.position.set(1.15, 0.0, -0.15);
+      earR.rotation.set(0.15, -0.3, Math.PI / 4);
       avatar.add(earR);
 
       /* Gold hoop earrings */
-      const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.9, roughness: 0.1 });
-      const ringGeo = new THREE.TorusGeometry(0.2, 0.04, 8, 24);
-      const ringL = new THREE.Mesh(ringGeo, goldMat);
-      ringL.position.set(-1.58, -0.3, -0.1);
-      avatar.add(ringL);
-
-      const ringR = new THREE.Mesh(ringGeo, goldMat);
-      ringR.position.set(1.58, -0.3, -0.1);
-      avatar.add(ringR);
+      const earringGeo = new THREE.TorusGeometry(0.16, 0.035, 8, 24);
+      const earringL = new THREE.Mesh(earringGeo, goldMat);
+      earringL.position.set(-1.28, -0.25, -0.05);
+      avatar.add(earringL);
+      const earringR = new THREE.Mesh(earringGeo, goldMat);
+      earringR.position.set(1.28, -0.25, -0.05);
+      avatar.add(earringR);
 
       /* Eyes */
-      const eyeGeo = new THREE.SphereGeometry(0.18, 16, 16);
-      const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
-      const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-      eyeL.position.set(-0.52, 0.3, 1.28);
-      avatar.add(eyeL);
-      const eyeR = eyeL.clone();
-      eyeR.position.x = 0.52;
-      avatar.add(eyeR);
+      const eyeWhiteGeo = new THREE.SphereGeometry(0.22, 24, 24);
+      const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.3 });
+      const eyeWL = new THREE.Mesh(eyeWhiteGeo, eyeWhiteMat);
+      eyeWL.position.set(-0.42, 0.25, 1.02);
+      eyeWL.scale.set(1, 0.8, 0.5);
+      avatar.add(eyeWL);
+      const eyeWR = eyeWL.clone();
+      eyeWR.position.x = 0.42;
+      avatar.add(eyeWR);
+
+      const pupilGeo = new THREE.SphereGeometry(0.11, 16, 16);
+      const pupilMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+      const pupilL = new THREE.Mesh(pupilGeo, pupilMat);
+      pupilL.position.set(-0.42, 0.25, 1.14);
+      avatar.add(pupilL);
+      const pupilR = pupilL.clone();
+      pupilR.position.x = 0.42;
+      avatar.add(pupilR);
 
       /* Eye shine */
       const shineMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1 });
-      const shineGeo = new THREE.SphereGeometry(0.05, 8, 8);
+      const shineGeo = new THREE.SphereGeometry(0.04, 8, 8);
       const shineL = new THREE.Mesh(shineGeo, shineMat);
-      shineL.position.set(-0.42, 0.42, 1.42);
+      shineL.position.set(-0.35, 0.32, 1.16);
       avatar.add(shineL);
       const shineR = shineL.clone();
-      shineR.position.x = 0.62;
+      shineR.position.x = 0.49;
       avatar.add(shineR);
 
-      /* Eyebrows (charcoal/dark) */
-      const browMat = new THREE.MeshStandardMaterial({ color: 0x111625 });
-      const browGeo = new THREE.BoxGeometry(0.45, 0.07, 0.1);
-      [-0.52, 0.52].forEach(x => {
+      /* Eyebrows - thick arched */
+      const browMat = new THREE.MeshStandardMaterial({ color: 0x0a0e1a });
+      const browGeo = new THREE.BoxGeometry(0.42, 0.08, 0.12);
+      [-0.42, 0.42].forEach((x, i) => {
         const brow = new THREE.Mesh(browGeo, browMat);
-        brow.position.set(x, 0.72, 1.28);
+        brow.position.set(x, 0.58, 1.06);
+        brow.rotation.z = i === 0 ? 0.12 : -0.12;
         avatar.add(brow);
       });
 
-      /* Nose (slightly darker blue) */
-      const noseMat = new THREE.MeshStandardMaterial({ color: 0x2d8fd8, roughness: 0.7 });
-      const nose = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 12), noseMat);
-      nose.position.set(0, -0.1, 1.42);
+      /* Nose */
+      const nose = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 12), skinDark);
+      nose.position.set(0, -0.05, 1.15);
       avatar.add(nose);
 
       /* Mouth group */
       const mouthGroup = new THREE.Group();
-      mouthGroup.position.set(0, -0.65, 1.3);
+      mouthGroup.position.set(0, -0.48, 1.05);
       avatar.add(mouthGroup);
       const mouthMat = new THREE.MeshStandardMaterial({ color: 0x7a2e2e, roughness: 0.5 });
-      // Squashed sphere geometry to create a smooth cartoon mouth instead of a blocky box
-      mouth = new THREE.Mesh(new THREE.SphereGeometry(0.3, 32, 32), mouthMat);
+      mouth = new THREE.Mesh(new THREE.SphereGeometry(0.24, 32, 32), mouthMat);
       mouth.scale.set(1.2, 0.075, 0.1);
       mouthGroup.add(mouth);
 
+      /* ===== FACIAL HAIR ===== */
       /* Curled mustache */
-      const hairMat = new THREE.MeshStandardMaterial({ color: 0x111625, roughness: 0.8 });
-      const stacheGeo = new THREE.TorusGeometry(0.24, 0.06, 8, 16, Math.PI);
+      const stacheGeo = new THREE.TorusGeometry(0.2, 0.05, 8, 16, Math.PI);
       const stacheL = new THREE.Mesh(stacheGeo, hairMat);
-      stacheL.position.set(-0.2, -0.48, 1.28);
+      stacheL.position.set(-0.16, -0.35, 1.05);
       stacheL.rotation.set(0.1, 0, Math.PI / 6);
       avatar.add(stacheL);
-
       const stacheR = new THREE.Mesh(stacheGeo, hairMat);
-      stacheR.position.set(0.2, -0.48, 1.28);
+      stacheR.position.set(0.16, -0.35, 1.05);
       stacheR.rotation.set(0.1, 0, -Math.PI / 6 - Math.PI);
       avatar.add(stacheR);
 
-      /* Goatee */
-      const goatee = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.7, 16), hairMat);
+      /* Full beard */
+      const beardGeo = new THREE.SphereGeometry(0.7, 32, 32);
+      const beard = new THREE.Mesh(beardGeo, hairMat);
+      beard.scale.set(0.9, 1.1, 0.55);
+      beard.position.set(0, -0.9, 0.55);
+      avatar.add(beard);
+
+      /* Goatee point */
+      const goatee = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.5, 16), hairMat);
       goatee.rotation.x = Math.PI;
-      goatee.position.set(0, -1.05, 1.15);
+      goatee.position.set(0, -1.45, 0.55);
       avatar.add(goatee);
 
-      /* Genie turban */
-      const turbanMat = new THREE.MeshStandardMaterial({ color: 0x4a3fa0, roughness: 0.4, metalness: 0.3 });
-      const turban = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.38, 16, 48), turbanMat);
-      turban.rotation.x = Math.PI / 2;
-      turban.position.set(0, 1.4, 0);
-      avatar.add(turban);
+      /* ===== TOPKNOT & STAR ===== */
+      const topknotSizes = [0.35, 0.28, 0.22, 0.16];
+      const topknotYPositions = [1.35, 1.6, 1.82, 2.0];
+      topknotSizes.forEach((r, i) => {
+        const knot = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 16), hairMat);
+        knot.position.set(0, topknotYPositions[i], -0.1 + i * 0.05);
+        avatar.add(knot);
+      });
 
-      /* Turban jewel */
-      const jewelMat = new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0xffd700, emissiveIntensity: 0.4, metalness: 0.8 });
-      const jewel = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 12), jewelMat);
-      jewel.position.set(0, 1.78, 1.1);
-      avatar.add(jewel);
+      /* 3D Gold Star on top */
+      const starShape = createStarShape(0.35, 0.15, 5);
+      const starExtrudeSettings = { depth: 0.12, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.02, bevelSegments: 2 };
+      const starGeo = new THREE.ExtrudeGeometry(starShape, starExtrudeSettings);
+      starGeo.center();
+      const star = new THREE.Mesh(starGeo, goldMat);
+      star.position.set(0, 2.35, -0.05);
+      avatar.add(star);
 
-      /* Turban feather */
-      const featherGeo = new THREE.ConeGeometry(0.12, 1.0, 4);
-      featherGeo.scale(1, 1, 0.1);
-      const featherMat = new THREE.MeshStandardMaterial({ color: 0xe05da9, roughness: 0.6 });
-      const feather = new THREE.Mesh(featherGeo, featherMat);
-      feather.position.set(0, 2.3, 0.9);
-      feather.rotation.set(-0.2, 0, 0.1);
-      avatar.add(feather);
-
-      /* Neck */
-      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 0.6, 16), skin);
-      neck.position.set(0, -1.2, 0);
+      /* ===== NECK ===== */
+      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 0.5, 16), skin);
+      neck.position.set(0, -1.5, 0);
       avatar.add(neck);
 
-      /* Torso / Shoulders */
-      const vestMat = new THREE.MeshStandardMaterial({ color: 0x4a3fa0, roughness: 0.4, metalness: 0.3 });
-      const torso = new THREE.Mesh(new THREE.SphereGeometry(1.4, 32, 16), vestMat);
-      torso.scale.set(1.6, 0.8, 0.9);
-      torso.position.set(0, -2.1, -0.2);
-      avatar.add(torso);
+      /* ===== MUSCULAR CHEST ===== */
+      const chest = new THREE.Mesh(new THREE.SphereGeometry(1.3, 32, 32), skin);
+      chest.scale.set(1.35, 1.0, 0.85);
+      chest.position.set(0, -2.5, 0);
+      avatar.add(chest);
+
+      /* Pec muscles */
+      const pecGeo = new THREE.SphereGeometry(0.45, 24, 24);
+      const pecL = new THREE.Mesh(pecGeo, skin);
+      pecL.position.set(-0.5, -2.15, 0.75);
+      pecL.scale.set(1.1, 0.8, 0.6);
+      avatar.add(pecL);
+      const pecR = pecL.clone();
+      pecR.position.x = 0.5;
+      avatar.add(pecR);
+
+      /* Abs / lower torso */
+      const abs = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.55, 1.0, 16), skin);
+      abs.position.set(0, -3.3, 0.1);
+      avatar.add(abs);
+
+      /* ===== GOLD CHAIN NECKLACE ===== */
+      const chainGeo = new THREE.TorusGeometry(0.65, 0.03, 8, 32);
+      const chain = new THREE.Mesh(chainGeo, goldMat);
+      chain.position.set(0, -1.85, 0.5);
+      chain.rotation.x = Math.PI / 2.3;
+      avatar.add(chain);
+
+      /* Gold medallion disk */
+      const medallionGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.06, 32);
+      const medallion = new THREE.Mesh(medallionGeo, goldMat);
+      medallion.rotation.x = Math.PI / 2;
+      medallion.position.set(0, -2.55, 0.95);
+      avatar.add(medallion);
+
+      /* Medallion mini star */
+      const miniStarShape = createStarShape(0.15, 0.06, 5);
+      const miniStarGeo = new THREE.ExtrudeGeometry(miniStarShape, { depth: 0.04, bevelEnabled: false });
+      miniStarGeo.center();
+      const miniStarMat = new THREE.MeshStandardMaterial({ color: 0xb8860b, metalness: 0.8, roughness: 0.2 });
+      const miniStar = new THREE.Mesh(miniStarGeo, miniStarMat);
+      miniStar.position.set(0, -2.35, 1.0);
+      avatar.add(miniStar);
+
+      /* ===== ARMS ===== */
+      /* Upper arms */
+      const armGeo = new THREE.CylinderGeometry(0.3, 0.25, 1.6, 16);
+      const armL = new THREE.Mesh(armGeo, skin);
+      armL.position.set(-2.0, -2.3, 0.1);
+      armL.rotation.z = Math.PI / 3.5;
+      avatar.add(armL);
+      const armR = new THREE.Mesh(armGeo, skin);
+      armR.position.set(2.0, -2.3, 0.1);
+      armR.rotation.z = -Math.PI / 3.5;
+      avatar.add(armR);
+
+      /* Forearms */
+      const forearmGeo = new THREE.CylinderGeometry(0.22, 0.2, 1.4, 16);
+      const forearmL = new THREE.Mesh(forearmGeo, skin);
+      forearmL.position.set(-3.1, -2.7, 0.2);
+      forearmL.rotation.z = Math.PI / 6;
+      avatar.add(forearmL);
+      const forearmR = new THREE.Mesh(forearmGeo, skin);
+      forearmR.position.set(3.1, -2.7, 0.2);
+      forearmR.rotation.z = -Math.PI / 6;
+      avatar.add(forearmR);
+
+      /* Gold wrist cuffs */
+      const cuffGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.2, 16);
+      const cuffL = new THREE.Mesh(cuffGeo, goldMat);
+      cuffL.position.set(-2.55, -2.5, 0.15);
+      cuffL.rotation.z = Math.PI / 3.5;
+      avatar.add(cuffL);
+      const cuffR = new THREE.Mesh(cuffGeo, goldMat);
+      cuffR.position.set(2.55, -2.5, 0.15);
+      cuffR.rotation.z = -Math.PI / 3.5;
+      avatar.add(cuffR);
+
+      /* Hands (open, palm-up spheres) */
+      const handGeo = new THREE.SphereGeometry(0.22, 16, 16);
+      const handL = new THREE.Mesh(handGeo, skin);
+      handL.position.set(-3.6, -3.1, 0.3);
+      handL.scale.set(1.2, 0.7, 1.0);
+      avatar.add(handL);
+      const handR = handL.clone();
+      handR.position.x = 3.6;
+      avatar.add(handR);
+
+      /* ===== GOLD BELT & EMERALD GEMS ===== */
+      const beltGeo = new THREE.CylinderGeometry(0.72, 0.72, 0.22, 32);
+      const belt = new THREE.Mesh(beltGeo, goldMat);
+      belt.position.set(0, -3.75, 0.1);
+      avatar.add(belt);
+
+      /* Emerald gems along belt */
+      const emeraldMat = new THREE.MeshStandardMaterial({
+        color: 0x2ecc71, emissive: 0x2ecc71, emissiveIntensity: 0.5,
+        metalness: 0.4, roughness: 0.2
+      });
+      const emeraldGeo = new THREE.SphereGeometry(0.07, 12, 12);
+      for (let i = 0; i < 5; i++) {
+        const angle = (i / 5) * Math.PI - Math.PI / 2;
+        const ex = Math.sin(angle) * 0.72;
+        const ez = Math.cos(angle) * 0.72;
+        const gem = new THREE.Mesh(emeraldGeo, emeraldMat);
+        gem.position.set(ex, -3.75, ez + 0.1);
+        avatar.add(gem);
+      }
+
+      /* ===== SWIRLING SMOKE TAIL ===== */
+      smokeSpheres = [];
+      const smokeBaseY = -4.1;
+      const smokeData = [
+        { y: 0, r: 0.65, opacity: 0.35 },
+        { y: -0.55, r: 0.55, opacity: 0.30 },
+        { y: -1.05, r: 0.50, opacity: 0.25 },
+        { y: -1.5, r: 0.42, opacity: 0.22 },
+        { y: -1.9, r: 0.35, opacity: 0.18 },
+        { y: -2.3, r: 0.30, opacity: 0.15 },
+        { y: -2.65, r: 0.25, opacity: 0.12 },
+      ];
+      smokeData.forEach((s, i) => {
+        const smokeMat = new THREE.MeshStandardMaterial({
+          color: 0x6db8e8, emissive: 0x3a8fd4, emissiveIntensity: 0.3,
+          transparent: true, opacity: s.opacity, roughness: 0.9
+        });
+        const smokeSphere = new THREE.Mesh(new THREE.SphereGeometry(s.r, 24, 24), smokeMat);
+        smokeSphere.position.set(0, smokeBaseY + s.y, 0);
+        smokeSphere.userData = { baseY: smokeBaseY + s.y, index: i, baseR: s.r };
+        avatar.add(smokeSphere);
+        smokeSpheres.push(smokeSphere);
+      });
+
+      /* ===== RUPEE SYMBOL (₹) AT BASE ===== */
+      const rupeeGroup = new THREE.Group();
+      rupeeGroup.position.set(0, -7.4, 0.3);
+      avatar.add(rupeeGroup);
+
+      const rupeeMat = new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0xffd700, emissiveIntensity: 0.2, metalness: 0.85, roughness: 0.15 });
+
+      /* Top horizontal bar */
+      const topBar = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.07, 0.06), rupeeMat);
+      topBar.position.set(0, 0.35, 0);
+      rupeeGroup.add(topBar);
+
+      /* Second horizontal bar */
+      const midBar = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.07, 0.06), rupeeMat);
+      midBar.position.set(0, 0.2, 0);
+      rupeeGroup.add(midBar);
+
+      /* Vertical stem */
+      const stem = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.6, 0.06), rupeeMat);
+      stem.position.set(-0.15, 0.1, 0);
+      rupeeGroup.add(stem);
+
+      /* Diagonal stroke */
+      const diag = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.55, 0.06), rupeeMat);
+      diag.position.set(0.08, -0.08, 0);
+      diag.rotation.z = Math.PI / 5;
+      rupeeGroup.add(diag);
+
+      /* Curved top (arc of the ₹) */
+      const arcGeo = new THREE.TorusGeometry(0.18, 0.04, 8, 16, Math.PI);
+      const arc = new THREE.Mesh(arcGeo, rupeeMat);
+      arc.position.set(0.08, 0.35, 0);
+      arc.rotation.z = Math.PI / 2;
+      rupeeGroup.add(arc);
+
+      /* Growth arrow pointing up-right */
+      const arrowStem = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.45, 0.06), rupeeMat);
+      arrowStem.position.set(0.5, 0.2, 0);
+      arrowStem.rotation.z = -Math.PI / 4;
+      rupeeGroup.add(arrowStem);
+
+      const arrowHeadGeo = new THREE.ConeGeometry(0.1, 0.2, 8);
+      const arrowHead = new THREE.Mesh(arrowHeadGeo, rupeeMat);
+      arrowHead.position.set(0.65, 0.38, 0);
+      arrowHead.rotation.z = -Math.PI / 4;
+      rupeeGroup.add(arrowHead);
 
       /* Start animation loop */
       if (!animationStarted) {
@@ -387,9 +623,23 @@
       requestAnimationFrame(animate);
       idleT += 0.01;
       if (!avatar) return;
-      avatar.rotation.y = Math.sin(idleT * 0.6) * 0.12;
-      avatar.position.y = Math.sin(idleT * 1.2) * 0.04;
 
+      /* Gentle idle sway */
+      avatar.rotation.y = Math.sin(idleT * 0.6) * 0.1;
+      avatar.position.y = Math.sin(idleT * 1.2) * 0.06;
+
+      /* Smoke tail animation */
+      smokeSpheres.forEach((s) => {
+        const i = s.userData.index;
+        const phase = idleT * 2 + i * 0.9;
+        s.position.x = Math.sin(phase) * (0.15 + i * 0.08);
+        s.position.z = Math.cos(phase * 0.7) * (0.1 + i * 0.04);
+        /* Subtle pulsing scale */
+        const pulse = 1 + Math.sin(idleT * 3 + i) * 0.08;
+        s.scale.set(pulse, pulse, pulse);
+      });
+
+      /* Lip sync animation */
       if (speaking) {
         currentMouthScaleY += (targetMouthScaleY - currentMouthScaleY) * 0.25;
         currentMouthScaleX += (targetMouthScaleX - currentMouthScaleX) * 0.25;
@@ -410,7 +660,7 @@
       if (!renderer || !camera) return;
       const wrap = document.getElementById("wrap");
       const W = wrap.clientWidth || window.innerWidth || 400;
-      const H = wrap.clientHeight || 360;
+      const H = wrap.clientHeight || 450;
       camera.aspect = W / H;
       camera.updateProjectionMatrix();
       renderer.setSize(W, H);
@@ -445,14 +695,14 @@
       clearLipSyncTimeouts();
       targetMouthScaleY = 0.15;
       targetMouthScaleX = 1.0;
-      
+
       const utter = new SpeechSynthesisUtterance(text);
       window.currentUtterance = utter; // prevent GC bug
-      
+
       utter.onstart = () => { speaking = true; setStatus("speaking", "Speaking"); };
       utter.onend = () => { speaking = false; setStatus("", "Idle"); clearLipSyncTimeouts(); targetMouthScaleY = 0.15; targetMouthScaleX = 1.0; };
       utter.onerror = () => { speaking = false; setStatus("", "Idle"); clearLipSyncTimeouts(); targetMouthScaleY = 0.15; targetMouthScaleX = 1.0; };
-      
+
       utter.onboundary = (event) => {
         if (event.name === 'word') {
           const word = text.substring(event.charIndex).split(/[\s,.;!?]+/)[0].toLowerCase();
