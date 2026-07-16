@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+    }
+
+    #wrap {
+      position: relative;
+      width: 100%;
+      height: 360px;
+      background: radial-gradient(circle at 50% 30%, #1c2029 0%, #0e1015 100%);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    #threeCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #status {
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(33, 37, 47, 0.9);
+      border: 1px solid #2c303c;
+      padding: 5px 14px;
+      border-radius: 999px;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #8b8f9a;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      z-index: 10;
+    }
+
+    #dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #8b8f9a;
+      transition: all .2s ease;
+    }
+
+    #status.listening #dot {
+      background: #d95d5d;
+      box-shadow: 0 0 6px #d95d5d;
+    }
+
+    #status.thinking #dot {
+      background: #e0955d;
+      box-shadow: 0 0 6px #e0955d;
+    }
+
+    #status.speaking #dot {
+      background: #5da9e0;
+      box-shadow: 0 0 6px #5da9e0;
+    }
+
+    #name {
+      position: absolute;
+      bottom: 54px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #8b8f9a;
+      z-index: 10;
+    }
+
+    #micBtn {
+      position: absolute;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 1px solid #2c303c;
+      background: #21252f;
+      color: #eceef2;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+
+    #micBtn.active {
+      background: #d95d5d;
+      border-color: #d95d5d;
+    }
+
+    #micBtn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="wrap">
+    <canvas id="threeCanvas"></canvas>
+    <div id="status"><span id="dot"></span><span id="statusText">Idle</span></div>
+    <div id="name">Genie</div>
+    <button id="micBtn" title="Voice input">🎤</button>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    /* ---------- Streamlit component protocol ---------- */
+    function sendToStreamlit(type, extra) {
+      window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, extra || {}), "*");
+    }
+    function setComponentValue(value) {
+      sendToStreamlit("streamlit:setComponentValue", { value, dataType: "json" });
+    }
+    function setFrameHeight() {
+      const h = document.getElementById("wrap").offsetHeight;
+      sendToStreamlit("streamlit:setFrameHeight", { height: h + 20 });
+    }
+    sendToStreamlit("streamlit:componentReady", { apiVersion: 1 });
+
+    let lastSpokenNonce = -1;
+    window.addEventListener("message", (event) => {
+      const data = event.data;
+      if (!data || data.type !== "streamlit:render") return;
+      const args = data.args || {};
+      const replyText = args.reply_text || "";
+      const replyNonce = args.reply_nonce || 0;
+      const muted = !!args.muted;
+      if (replyText && replyNonce !== lastSpokenNonce) {
+        lastSpokenNonce = replyNonce;
+        if (!muted) speak(replyText);
+      }
+    });
+
+    /* ---------- Three.js avatar ---------- */
+    let renderer, scene, camera, avatar, mouth;
+    let speaking = false, mouthPhase = 0, idleT = 0;
+    let animationStarted = false;
+
+    function initThree() {
+      const wrap = document.getElementById("wrap");
+      const canvas = document.getElementById("threeCanvas");
+      const W = wrap.clientWidth || window.innerWidth || 400;
+      const H = wrap.clientHeight || 360;
+
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(35, W / H, 0.1, 100);
+      camera.position.set(0, 0, 6.5);
+
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+      renderer.setSize(W, H);
+      renderer.setPixelRatio(window.devicePixelRatio || 1);
+
+      /* Lights */
+      scene.add(new THREE.AmbientLight(0x404050, 0.9));
+      const key = new THREE.DirectionalLight(0xffffff, 1.4);
+      key.position.set(3, 4, 5);
+      scene.add(key);
+      const fill = new THREE.DirectionalLight(0x5da9e0, 0.5);
+      fill.position.set(-4, -1, 3);
+      scene.add(fill);
+
+      /* Avatar group */
+      avatar = new THREE.Group();
+      scene.add(avatar);
+
+      /* Head */
+      const skin = new THREE.MeshStandardMaterial({ color: 0xe8b48c, roughness: 0.55, metalness: 0.05 });
+      const head = new THREE.Mesh(new THREE.SphereGeometry(1.5, 64, 64), skin);
+      head.scale.set(1, 1.08, 0.92);
+      avatar.add(head);
+
+      /* Eyes */
+      const eyeGeo = new THREE.SphereGeometry(0.18, 16, 16);
+      const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+      const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+      eyeL.position.set(-0.52, 0.3, 1.28);
+      avatar.add(eyeL);
+      const eyeR = eyeL.clone();
+      eyeR.position.x = 0.52;
+      avatar.add(eyeR);
+
+      /* Eye shine */
+      const shineMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1 });
+      const shineGeo = new THREE.SphereGeometry(0.05, 8, 8);
+      const shineL = new THREE.Mesh(shineGeo, shineMat);
+      shineL.position.set(-0.42, 0.42, 1.42);
+      avatar.add(shineL);
+      const shineR = shineL.clone();
+      shineR.position.x = 0.62;
+      avatar.add(shineR);
+
+      /* Eyebrows */
+      const browMat = new THREE.MeshStandardMaterial({ color: 0x5c3a1e });
+      const browGeo = new THREE.BoxGeometry(0.45, 0.07, 0.1);
+      [-0.52, 0.52].forEach(x => {
+        const brow = new THREE.Mesh(browGeo, browMat);
+        brow.position.set(x, 0.72, 1.28);
+        avatar.add(brow);
+      });
+
+      /* Nose */
+      const noseMat = new THREE.MeshStandardMaterial({ color: 0xd4956f, roughness: 0.7 });
+      const nose = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 12), noseMat);
+      nose.position.set(0, -0.1, 1.42);
+      avatar.add(nose);
+
+      /* Mouth group */
+      const mouthGroup = new THREE.Group();
+      mouthGroup.position.set(0, -0.65, 1.3);
+      avatar.add(mouthGroup);
+      const mouthMat = new THREE.MeshStandardMaterial({ color: 0x7a2e2e, roughness: 0.5 });
+      mouth = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.13, 0.2), mouthMat);
+      mouthGroup.add(mouth);
+
+      /* Genie turban */
+      const turbanMat = new THREE.MeshStandardMaterial({ color: 0x4a3fa0, roughness: 0.4, metalness: 0.3 });
+      const turban = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.38, 16, 48), turbanMat);
+      turban.rotation.x = Math.PI / 2;
+      turban.position.set(0, 1.4, 0);
+      avatar.add(turban);
+
+      /* Turban jewel */
+      const jewelMat = new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0xffd700, emissiveIntensity: 0.4, metalness: 0.8 });
+      const jewel = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 12), jewelMat);
+      jewel.position.set(0, 1.78, 1.1);
+      avatar.add(jewel);
+
+      /* Start animation loop */
+      if (!animationStarted) {
+        animationStarted = true;
+        animate();
+      }
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      idleT += 0.01;
+      if (!avatar) return;
+      avatar.rotation.y = Math.sin(idleT * 0.6) * 0.12;
+      avatar.position.y = Math.sin(idleT * 1.2) * 0.04;
+
+      if (speaking) {
+        mouthPhase += 0.35;
+        const open = 0.13 + Math.abs(Math.sin(mouthPhase)) * 0.4 + Math.random() * 0.05;
+        mouth.scale.y = open / 0.13;
+        mouth.position.y = -open * 0.3;
+      } else {
+        mouth.scale.y += (1 - mouth.scale.y) * 0.2;
+        mouth.position.y += (0 - mouth.position.y) * 0.2;
+      }
+      renderer.render(scene, camera);
+    }
+
+    function handleResize() {
+      if (!renderer || !camera) return;
+      const wrap = document.getElementById("wrap");
+      const W = wrap.clientWidth || window.innerWidth || 400;
+      const H = wrap.clientHeight || 360;
+      camera.aspect = W / H;
+      camera.updateProjectionMatrix();
+      renderer.setSize(W, H);
+    }
+
+    /* Initialise after the DOM + Three.js are ready */
+    function tryInit() {
+      if (typeof THREE === "undefined") { setTimeout(tryInit, 100); return; }
+      const wrap = document.getElementById("wrap");
+      if (!wrap || wrap.clientWidth === 0) { setTimeout(tryInit, 80); return; }
+      initThree();
+      setFrameHeight();
+    }
+
+    window.addEventListener("load", tryInit);
+    window.addEventListener("resize", () => { handleResize(); setFrameHeight(); });
+    /* Also try immediately in case load already fired */
+    if (document.readyState === "complete") tryInit();
+
+    /* ---------- Status pill ---------- */
+    const statusEl = document.getElementById("status");
+    const statusText = document.getElementById("statusText");
+    function setStatus(mode, label) {
+      statusEl.className = mode;
+      statusText.textContent = label;
+    }
+
+    /* ---------- TTS ---------- */
+    function speak(text) {
+      if (!("speechSynthesis" in window)) return;
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.onstart = () => { speaking = true; setStatus("speaking", "Speaking"); };
+      utter.onend = () => { speaking = false; setStatus("", "Idle"); };
+      utter.onerror = () => { speaking = false; setStatus("", "Idle"); };
+      window.speechSynthesis.speak(utter);
+    }
+
+    /* ---------- STT ---------- */
+    const micBtn = document.getElementById("micBtn");
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null, listening = false;
+
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = "en-US";
+
+      recognition.onstart = () => { listening = true; micBtn.classList.add("active"); setStatus("listening", "Listening"); };
+      recognition.onend = () => { listening = false; micBtn.classList.remove("active"); if (!speaking) setStatus("", "Idle"); };
+      recognition.onerror = () => { listening = false; micBtn.classList.remove("active"); setStatus("", "Idle"); };
+      recognition.onresult = (e) => {
+        const transcript = e.results[0][0].transcript;
+        setStatus("thinking", "Thinking…");
+        setComponentValue({ transcript, nonce: Date.now() });
+      };
+
+      micBtn.addEventListener("click", () => {
+        if (listening) { recognition.stop(); return; }
+        window.speechSynthesis.cancel();
+        recognition.start();
+      });
+    } else {
+      micBtn.disabled = true;
+      micBtn.title = "Voice input not supported — try Chrome";
+    }
+  </script>
+</body>
+
+</html>
