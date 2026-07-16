@@ -109,6 +109,12 @@
     #micBtn.active {
       background: #d95d5d;
       border-color: #d95d5d;
+      animation: micPulse 1s ease-in-out infinite;
+    }
+
+    @keyframes micPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(217, 93, 93, 0.6); }
+      50% { box-shadow: 0 0 0 10px rgba(217, 93, 93, 0); }
     }
 
     #micBtn:disabled {
@@ -160,6 +166,15 @@
     let speaking = false, mouthPhase = 0, idleT = 0;
     let animationStarted = false;
     let smokeSpheres = [];
+
+    /* Refs for animated parts */
+    let starMesh = null;
+    let chestMesh = null;
+    let eyeWLMesh = null, eyeWRMesh = null;
+    let pupilLMesh = null, pupilRMesh = null;
+    let shineLMesh = null, shineRMesh = null;
+    let sparkles = [];
+    let nextBlinkTime = 3;
 
     /* Lip sync settings & state */
     let targetMouthScaleY = 0.15;
@@ -333,32 +348,32 @@
       /* Eyes */
       const eyeWhiteGeo = new THREE.SphereGeometry(0.22, 24, 24);
       const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.3 });
-      const eyeWL = new THREE.Mesh(eyeWhiteGeo, eyeWhiteMat);
-      eyeWL.position.set(-0.42, 0.25, 1.02);
-      eyeWL.scale.set(1, 0.8, 0.5);
-      avatar.add(eyeWL);
-      const eyeWR = eyeWL.clone();
-      eyeWR.position.x = 0.42;
-      avatar.add(eyeWR);
+      eyeWLMesh = new THREE.Mesh(eyeWhiteGeo, eyeWhiteMat);
+      eyeWLMesh.position.set(-0.42, 0.25, 1.02);
+      eyeWLMesh.scale.set(1, 0.8, 0.5);
+      avatar.add(eyeWLMesh);
+      eyeWRMesh = eyeWLMesh.clone();
+      eyeWRMesh.position.x = 0.42;
+      avatar.add(eyeWRMesh);
 
       const pupilGeo = new THREE.SphereGeometry(0.11, 16, 16);
       const pupilMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
-      const pupilL = new THREE.Mesh(pupilGeo, pupilMat);
-      pupilL.position.set(-0.42, 0.25, 1.14);
-      avatar.add(pupilL);
-      const pupilR = pupilL.clone();
-      pupilR.position.x = 0.42;
-      avatar.add(pupilR);
+      pupilLMesh = new THREE.Mesh(pupilGeo, pupilMat);
+      pupilLMesh.position.set(-0.42, 0.25, 1.14);
+      avatar.add(pupilLMesh);
+      pupilRMesh = pupilLMesh.clone();
+      pupilRMesh.position.x = 0.42;
+      avatar.add(pupilRMesh);
 
       /* Eye shine */
       const shineMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1 });
       const shineGeo = new THREE.SphereGeometry(0.04, 8, 8);
-      const shineL = new THREE.Mesh(shineGeo, shineMat);
-      shineL.position.set(-0.35, 0.32, 1.16);
-      avatar.add(shineL);
-      const shineR = shineL.clone();
-      shineR.position.x = 0.49;
-      avatar.add(shineR);
+      shineLMesh = new THREE.Mesh(shineGeo, shineMat);
+      shineLMesh.position.set(-0.35, 0.32, 1.16);
+      avatar.add(shineLMesh);
+      shineRMesh = shineLMesh.clone();
+      shineRMesh.position.x = 0.49;
+      avatar.add(shineRMesh);
 
       /* Eyebrows - thick arched */
       const browMat = new THREE.MeshStandardMaterial({ color: 0x0a0e1a });
@@ -423,9 +438,9 @@
       const starExtrudeSettings = { depth: 0.12, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.02, bevelSegments: 2 };
       const starGeo = new THREE.ExtrudeGeometry(starShape, starExtrudeSettings);
       starGeo.center();
-      const star = new THREE.Mesh(starGeo, goldMat);
-      star.position.set(0, 2.35, -0.05);
-      avatar.add(star);
+      starMesh = new THREE.Mesh(starGeo, goldMat);
+      starMesh.position.set(0, 2.35, -0.05);
+      avatar.add(starMesh);
 
       /* ===== NECK ===== */
       const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 0.5, 16), skin);
@@ -433,10 +448,10 @@
       avatar.add(neck);
 
       /* ===== MUSCULAR CHEST ===== */
-      const chest = new THREE.Mesh(new THREE.SphereGeometry(1.3, 32, 32), skin);
-      chest.scale.set(1.35, 1.0, 0.85);
-      chest.position.set(0, -2.5, 0);
-      avatar.add(chest);
+      chestMesh = new THREE.Mesh(new THREE.SphereGeometry(1.3, 32, 32), skin);
+      chestMesh.scale.set(1.35, 1.0, 0.85);
+      chestMesh.position.set(0, -2.5, 0);
+      avatar.add(chestMesh);
 
       /* Pec muscles */
       const pecGeo = new THREE.SphereGeometry(0.45, 24, 24);
@@ -612,6 +627,30 @@
       arrowHead.rotation.z = -Math.PI / 4;
       rupeeGroup.add(arrowHead);
 
+      /* ===== FLOATING SPARKLE PARTICLES ===== */
+      sparkles = [];
+      const sparkleMat = new THREE.MeshStandardMaterial({
+        color: 0xffd700, emissive: 0xffd700, emissiveIntensity: 1.0,
+        transparent: true, opacity: 0.7
+      });
+      const sparkleGeo = new THREE.SphereGeometry(0.04, 8, 8);
+      for (let i = 0; i < 20; i++) {
+        const sp = new THREE.Mesh(sparkleGeo, sparkleMat.clone());
+        sp.position.set(
+          (Math.random() - 0.5) * 8,
+          (Math.random() - 0.5) * 10 - 2,
+          (Math.random() - 0.5) * 3
+        );
+        sp.userData = {
+          speedX: (Math.random() - 0.5) * 0.02,
+          speedY: 0.005 + Math.random() * 0.015,
+          phase: Math.random() * Math.PI * 2,
+          baseOpacity: 0.3 + Math.random() * 0.5
+        };
+        scene.add(sp);
+        sparkles.push(sp);
+      }
+
       /* Start animation loop */
       if (!animationStarted) {
         animationStarted = true;
@@ -628,15 +667,59 @@
       avatar.rotation.y = Math.sin(idleT * 0.6) * 0.1;
       avatar.position.y = Math.sin(idleT * 1.2) * 0.06;
 
+      /* Star rotation */
+      if (starMesh) {
+        starMesh.rotation.z += 0.008;
+        starMesh.rotation.y = Math.sin(idleT * 2) * 0.15;
+      }
+
+      /* Chest breathing */
+      if (chestMesh) {
+        const breath = 1 + Math.sin(idleT * 1.5) * 0.02;
+        chestMesh.scale.set(1.35 * breath, 1.0, 0.85 * breath);
+      }
+
+      /* Eye blinking */
+      if (eyeWLMesh) {
+        const time = idleT;
+        if (time > nextBlinkTime) {
+          nextBlinkTime = time + 2.5 + Math.random() * 4;
+        }
+        const blinkDist = time - (nextBlinkTime - 0.12);
+        let blinkScale = 1.0;
+        if (blinkDist >= 0 && blinkDist < 0.12) {
+          blinkScale = blinkDist < 0.06
+            ? 1.0 - (blinkDist / 0.06) * 0.95
+            : 0.05 + ((blinkDist - 0.06) / 0.06) * 0.95;
+        }
+        eyeWLMesh.scale.y = 0.8 * blinkScale;
+        eyeWRMesh.scale.y = 0.8 * blinkScale;
+        pupilLMesh.scale.y = blinkScale;
+        pupilRMesh.scale.y = blinkScale;
+        shineLMesh.scale.y = blinkScale;
+        shineRMesh.scale.y = blinkScale;
+      }
+
       /* Smoke tail animation */
       smokeSpheres.forEach((s) => {
         const i = s.userData.index;
         const phase = idleT * 2 + i * 0.9;
         s.position.x = Math.sin(phase) * (0.15 + i * 0.08);
         s.position.z = Math.cos(phase * 0.7) * (0.1 + i * 0.04);
-        /* Subtle pulsing scale */
         const pulse = 1 + Math.sin(idleT * 3 + i) * 0.08;
         s.scale.set(pulse, pulse, pulse);
+      });
+
+      /* Floating sparkle particles */
+      sparkles.forEach((sp) => {
+        const ud = sp.userData;
+        sp.position.y += ud.speedY;
+        sp.position.x += Math.sin(idleT * 2 + ud.phase) * 0.003;
+        sp.material.opacity = ud.baseOpacity * (0.5 + 0.5 * Math.sin(idleT * 4 + ud.phase));
+        if (sp.position.y > 5) {
+          sp.position.y = -8;
+          sp.position.x = (Math.random() - 0.5) * 8;
+        }
       });
 
       /* Lip sync animation */
@@ -689,9 +772,55 @@
     }
 
     /* ---------- TTS ---------- */
+    let bestVoice = null;
+    let voicesLoaded = false;
+
+    function pickBestVoice() {
+      const voices = window.speechSynthesis.getVoices();
+      if (!voices.length) return null;
+      /* Priority: Google UK English > Google US English > any 'en' Google voice > first en voice */
+      const prefs = [
+        v => v.name.includes('Google UK English Male'),
+        v => v.name.includes('Google UK English Female'),
+        v => v.name.includes('Google US English'),
+        v => v.name.includes('Google') && v.lang.startsWith('en'),
+        v => v.name.includes('Microsoft') && v.lang.startsWith('en') && v.name.includes('Online'),
+        v => v.lang.startsWith('en'),
+      ];
+      for (const test of prefs) {
+        const found = voices.find(test);
+        if (found) return found;
+      }
+      return voices[0];
+    }
+
+    /* Voices load async in Chrome — listen for the event */
+    if ('speechSynthesis' in window) {
+      const loadVoices = () => { bestVoice = pickBestVoice(); voicesLoaded = true; };
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+      loadVoices();
+    }
+
+    /* Chrome silently stops long utterances after ~15s. This keepalive pings
+       the synth engine every 10s while speech is active to prevent that. */
+    let ttsKeepAliveId = null;
+    function startTTSKeepAlive() {
+      stopTTSKeepAlive();
+      ttsKeepAliveId = setInterval(() => {
+        if (window.speechSynthesis.speaking) {
+          window.speechSynthesis.pause();
+          window.speechSynthesis.resume();
+        }
+      }, 10000);
+    }
+    function stopTTSKeepAlive() {
+      if (ttsKeepAliveId) { clearInterval(ttsKeepAliveId); ttsKeepAliveId = null; }
+    }
+
     function speak(text) {
-      if (!("speechSynthesis" in window)) return;
+      if (!('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
+      stopTTSKeepAlive();
       clearLipSyncTimeouts();
       targetMouthScaleY = 0.15;
       targetMouthScaleX = 1.0;
@@ -699,9 +828,32 @@
       const utter = new SpeechSynthesisUtterance(text);
       window.currentUtterance = utter; // prevent GC bug
 
-      utter.onstart = () => { speaking = true; setStatus("speaking", "Speaking"); };
-      utter.onend = () => { speaking = false; setStatus("", "Idle"); clearLipSyncTimeouts(); targetMouthScaleY = 0.15; targetMouthScaleX = 1.0; };
-      utter.onerror = () => { speaking = false; setStatus("", "Idle"); clearLipSyncTimeouts(); targetMouthScaleY = 0.15; targetMouthScaleX = 1.0; };
+      /* Apply best voice with tuned rate/pitch */
+      if (bestVoice) utter.voice = bestVoice;
+      utter.rate = 1.0;
+      utter.pitch = 0.95;
+
+      utter.onstart = () => {
+        speaking = true;
+        setStatus('speaking', 'Speaking');
+        startTTSKeepAlive();
+      };
+      utter.onend = () => {
+        speaking = false;
+        setStatus('', 'Idle');
+        stopTTSKeepAlive();
+        clearLipSyncTimeouts();
+        targetMouthScaleY = 0.15;
+        targetMouthScaleX = 1.0;
+      };
+      utter.onerror = () => {
+        speaking = false;
+        setStatus('', 'Idle');
+        stopTTSKeepAlive();
+        clearLipSyncTimeouts();
+        targetMouthScaleY = 0.15;
+        targetMouthScaleX = 1.0;
+      };
 
       utter.onboundary = (event) => {
         if (event.name === 'word') {
@@ -721,21 +873,52 @@
     if (SpeechRecognition) {
       recognition = new SpeechRecognition();
       recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = "en-US";
+      recognition.interimResults = true;  /* Show live transcription */
+      recognition.lang = 'en-US';
 
-      recognition.onstart = () => { listening = true; micBtn.classList.add("active"); setStatus("listening", "Listening"); };
-      recognition.onend = () => { listening = false; micBtn.classList.remove("active"); if (!speaking) setStatus("", "Idle"); };
-      recognition.onerror = () => { listening = false; micBtn.classList.remove("active"); setStatus("", "Idle"); };
+      recognition.onstart = () => {
+        listening = true;
+        micBtn.classList.add('active');
+        setStatus('listening', 'Listening…');
+      };
+      recognition.onend = () => {
+        listening = false;
+        micBtn.classList.remove('active');
+        if (!speaking) setStatus('', 'Idle');
+      };
+      recognition.onerror = (e) => {
+        listening = false;
+        micBtn.classList.remove('active');
+        if (e.error === 'not-allowed') {
+          setStatus('', 'Mic blocked');
+        } else {
+          setStatus('', 'Idle');
+        }
+      };
       recognition.onresult = (e) => {
-        const transcript = e.results[0][0].transcript;
-        setStatus("thinking", "Thinking…");
-        setComponentValue({ transcript, nonce: Date.now() });
+        let finalTranscript = '';
+        let interimTranscript = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const t = e.results[i][0].transcript;
+          if (e.results[i].isFinal) {
+            finalTranscript += t;
+          } else {
+            interimTranscript += t;
+          }
+        }
+        if (interimTranscript) {
+          setStatus('listening', interimTranscript.substring(0, 40) + (interimTranscript.length > 40 ? '…' : ''));
+        }
+        if (finalTranscript) {
+          setStatus('thinking', 'Thinking…');
+          setComponentValue({ transcript: finalTranscript.trim(), nonce: Date.now() });
+        }
       };
 
-      micBtn.addEventListener("click", () => {
+      micBtn.addEventListener('click', () => {
         if (listening) { recognition.stop(); return; }
         window.speechSynthesis.cancel();
+        stopTTSKeepAlive();
         clearLipSyncTimeouts();
         speaking = false;
         targetMouthScaleY = 0.15;
@@ -744,7 +927,7 @@
       });
     } else {
       micBtn.disabled = true;
-      micBtn.title = "Voice input not supported — try Chrome";
+      micBtn.title = 'Voice input not supported — try Chrome';
     }
   </script>
 </body>
