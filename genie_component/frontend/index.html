@@ -870,7 +870,7 @@
       utter.onstart = () => {
         speaking = true;
         speakingStartTime = performance.now();
-        lastBoundaryTime = 0;
+        lastBoundaryTime = performance.now(); /* give boundary events 500ms to start firing */
         mouthPhase = 0;
         setStatus('speaking', 'Speaking');
         startTTSKeepAlive();
