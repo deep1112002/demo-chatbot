@@ -175,9 +175,12 @@
     let shineLMesh = null, shineRMesh = null;
     let sparkles = [];
     let nextBlinkTime = 3;
-    let lastBoundaryTime = 0;  /* timestamp of last onboundary event */
-    let speakingStartTime = 0; /* when speaking started */
     let hasFiredBoundary = false; /* whether any boundary event has fired */
+    let lastFrameTime = performance.now();
+    let fallbackState = 'pause';
+    let fallbackTimer = 0;
+    let fallbackTargetY = 0.15;
+    let fallbackTargetX = 1.0;
 
     /* Lip sync settings & state */
     let targetMouthScaleY = 0.15;
@@ -731,6 +734,11 @@
 
     function animate() {
       requestAnimationFrame(animate);
+      
+      const now = performance.now();
+      const dt = now - lastFrameTime;
+      lastFrameTime = now;
+      
       idleT += 0.01;
       if (!avatar) return;
 
@@ -795,18 +803,42 @@
 
       /* Lip sync animation */
       if (speaking) {
-        const now = performance.now();
-        
         if (hasFiredBoundary) {
           /* Phonetic-driven lip sync (onboundary events are actively working) */
           currentMouthScaleY += (targetMouthScaleY - currentMouthScaleY) * 0.25;
           currentMouthScaleX += (targetMouthScaleX - currentMouthScaleX) * 0.25;
         } else if (now - speakingStartTime > 500) {
-          /* Fallback: sine-wave animation when onboundary is unavailable */
-          mouthPhase += 0.18;
-          const wave = 0.3 + Math.abs(Math.sin(mouthPhase * 2.5)) * 1.2 + Math.sin(mouthPhase * 1.3) * 0.3;
-          currentMouthScaleY += (wave - currentMouthScaleY) * 0.3;
-          currentMouthScaleX += ((0.7 + Math.sin(mouthPhase * 1.8) * 0.3) - currentMouthScaleX) * 0.3;
+          /* Fallback: Pseudo-Phonetic Fallback Generator when onboundary is unavailable */
+          fallbackTimer -= dt;
+          if (fallbackTimer <= 0) {
+            if (fallbackState === 'syllable') {
+              // 25% chance of a short word-pause, otherwise next syllable
+              if (Math.random() < 0.25) {
+                fallbackState = 'pause';
+                fallbackTimer = 80 + Math.random() * 120; // 80-200ms pause
+                fallbackTargetY = 0.15;
+                fallbackTargetX = 1.0;
+              } else {
+                // Next syllable with a new random shape
+                const shapes = ['a', 'e', 'i', 'o', 'u', 'sh', 'f', 't'];
+                const randomShape = mouthShapes[shapes[Math.floor(Math.random() * shapes.length)]];
+                fallbackState = 'syllable';
+                fallbackTimer = 120 + Math.random() * 100; // 120-220ms syllable duration
+                fallbackTargetY = randomShape.y;
+                fallbackTargetX = randomShape.x;
+              }
+            } else {
+              // End pause -> start new syllable
+              const shapes = ['a', 'e', 'i', 'o', 'u', 'sh', 'f', 't'];
+              const randomShape = mouthShapes[shapes[Math.floor(Math.random() * shapes.length)]];
+              fallbackState = 'syllable';
+              fallbackTimer = 120 + Math.random() * 100;
+              fallbackTargetY = randomShape.y;
+              fallbackTargetX = randomShape.x;
+            }
+          }
+          currentMouthScaleY += (fallbackTargetY - currentMouthScaleY) * 0.25;
+          currentMouthScaleX += (fallbackTargetX - currentMouthScaleX) * 0.25;
         } else {
           /* Initial grace period before fallback starts */
           currentMouthScaleY += (0.15 - currentMouthScaleY) * 0.2;
